@@ -67,7 +67,7 @@ class DifferentialFlatnessNode(Node):
         self.f_d = np.zeros((1, self.t.shape[0]), dtype=np.double)
 
         # Internal States of the system        
-        pos_0 = np.array([0.0, 0.0, 0.5], dtype=np.double)
+        pos_0 = np.array([0.2, -0.2, 0.5], dtype=np.double)
         vel_0 = np.array([0.0, 0.0, 0.0], dtype=np.double)
         omega_0 = np.array([0.0, 0.0, 0.0], dtype=np.double)
         quat_0 = np.array([1.0, 0.0, 0.0, 0.0])
@@ -86,7 +86,7 @@ class DifferentialFlatnessNode(Node):
         # Control gains
         self.Kp = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]], dtype=np.double)
         self.Kv = np.array([[6.0, 0.0, 0.0], [0.0, 6.0, 0.0], [0.0, 0.0, 6.0]], dtype=np.double)
-        self.kq_red  = 150
+        self.kq_red  = 200
         self.kq_yaw = 3
         self.K_omega = np.array([[20.0, 0.0, 0.0], [0.0, 20.0, 0.0], [0.0, 0.0, 8.0]], dtype=np.double)
 
