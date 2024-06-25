@@ -82,6 +82,10 @@ def quadrotorModel(L: list)-> AcadosModel:
     Jyy = L[2]
     Jzz = L[3]
     gravity = L[4]
+    dx = L[5]
+    dy = L[6]
+    dz = L[7]
+    kh = L[8]
 
     # States of the system
     x = MX.sym('x')
@@ -139,6 +143,11 @@ def quadrotorModel(L: list)-> AcadosModel:
     J[1, 1] = Jyy
     J[2, 2] = Jzz
 
+    D = MX.zeros(3, 3)
+    D[0, 0] = dx
+    D[1, 1] = dy
+    D[2, 2] = dz
+
     #Auxiliar variable
     e3 = MX.zeros(3, 1)
     e3[2, 0] = 1.0
@@ -149,8 +158,13 @@ def quadrotorModel(L: list)-> AcadosModel:
     quat = X[6:10, 0]
     omega = X[10:13, 0]
     R = quatTorot_c(quat)
+    X_b = R[:, 0]
+    Y_b = R[:, 1]
+    Z_b = R[:, 2]
 
+    aux_thrust = X_b.T@vel + Y_b.T@vel
     # Rate of change of the system
+    #acc = ((u[0]*(R@e3))/m) - g + kh*(aux_thrust*aux_thrust)*(R@e3) - R@D@R.T@vel
     acc = ((u[0]*(R@e3))/m) - g
 
     qdot = quatdot_c(quat, omega)

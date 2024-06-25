@@ -428,6 +428,84 @@ def plot_control_actions(fig11, ax11, ax21, ax31, ax41, F, M, t, name):
         fig11.savefig(name + ".png")
         return None
 
+def plot_control_actions_reference(fig11, ax11, ax21, ax31, ax41, F, M, F_ref, M_ref, t, name):
+        t = t[0:M.shape[1]]
+        ax11.set_xlim((t[0], t[-1]))
+        ax21.set_xlim((t[0], t[-1]))
+        ax31.set_xlim((t[0], t[-1]))
+        ax41.set_xlim((t[0], t[-1]))
+
+        ax11.set_xticklabels([])
+        ax21.set_xticklabels([])
+        ax31.set_xticklabels([])
+
+        state_1_e, = ax11.plot(t[0:t.shape[0]], F[0, 0:t.shape[0]],
+                    color='#C43C29', lw=1.0, ls="-")
+
+        state_1_e_ref, = ax11.plot(t[0:t.shape[0]], F_ref[0, 0:t.shape[0]],
+                    color='#C43C29', lw=1.0, ls="--")
+
+        state_2_e, = ax21.plot(t[0:t.shape[0]], M[0, 0:t.shape[0]],
+                        color='#3FB454', lw=1.0, ls="-")
+
+        state_2_e_ref, = ax21.plot(t[0:t.shape[0]], M_ref[0, 0:t.shape[0]],
+                        color='#3FB454', lw=1.0, ls="--")
+
+        state_3_e, = ax31.plot(t[0:t.shape[0]], M[1, 0:t.shape[0]],
+                        color='#3F8BB4', lw=1.0, ls="-")
+
+        state_3_e_ref, = ax31.plot(t[0:t.shape[0]], M_ref[1, 0:t.shape[0]],
+                        color='#3F8BB4', lw=1.0, ls="--")
+
+        state_4_e, = ax41.plot(t[0:t.shape[0]], M[2, 0:t.shape[0]],
+                        color='#36323E', lw=1.0, ls="-")
+
+        state_4_e_ref, = ax41.plot(t[0:t.shape[0]], M_ref[2, 0:t.shape[0]],
+                        color='#36323E', lw=1.0, ls="--")
+
+        ax11.set_ylabel(r"$[N]$", rotation='vertical')
+        ax11.legend([state_1_e, state_1_e_ref],
+                [ r'$f_z$', r'$f_{zref}$'],
+                loc="best",
+                frameon=True, fancybox=True, shadow=False, ncol=2,
+                borderpad=0.5, labelspacing=0.5, handlelength=3, handletextpad=0.1,
+                borderaxespad=0.3, columnspacing=2)
+        ax11.grid(color='#949494', linestyle='-.', linewidth=0.5)
+
+        ax21.set_ylabel(r"$[N.m]$", rotation='vertical')
+        ax21.legend([state_2_e, state_2_e_ref],
+                [r'$\tau_x$', r'$\tau_{xref}$'],
+                loc="best",
+                frameon=True, fancybox=True, shadow=False, ncol=2,
+                borderpad=0.5, labelspacing=0.5, handlelength=3, handletextpad=0.1,
+                borderaxespad=0.3, columnspacing=2)
+        ax21.grid(color='#949494', linestyle='-.', linewidth=0.5)
+        ax21.set_xticklabels([])
+
+        ax31.set_ylabel(r"$[N.m]$", rotation='vertical')
+        ax31.legend([state_3_e, state_3_e_ref],
+                [r'$\tau_y$', r'$\tau_{yref}$'],
+                loc="best",
+                frameon=True, fancybox=True, shadow=False, ncol=2,
+                borderpad=0.5, labelspacing=0.5, handlelength=3, handletextpad=0.1,
+                borderaxespad=0.3, columnspacing=2)
+        ax31.grid(color='#949494', linestyle='-.', linewidth=0.5)
+        ax31.set_xticklabels([])
+    
+        ax41.set_ylabel(r"$[N.m]$", rotation='vertical')
+        ax41.legend([state_4_e, state_4_e_ref],
+                [r'$\tau_z$', r'$\tau_{zref}$'],
+                loc="best",
+                frameon=True, fancybox=True, shadow=False, ncol=2,
+                borderpad=0.5, labelspacing=0.5, handlelength=3, handletextpad=0.1,
+                borderaxespad=0.3, columnspacing=2)
+        ax41.grid(color='#949494', linestyle='-.', linewidth=0.5)
+        ax41.set_xlabel(r"$\textrm{Time}[s]$", labelpad=5)
+
+        fig11.savefig(name + ".pdf")
+        fig11.savefig(name + ".png")
+        return None
+
 def plot_states_euler(fig11, ax11, ax21, ax31, x, xd, t, name):
         t = t[0:x.shape[1]]
         ax11.set_xlim((t[0], t[-1]))
@@ -502,6 +580,30 @@ def plot_time(fig11, ax11, x_sample, x_sample_real, t, name):
         ax11.set_ylabel(r"$[m]$", rotation='vertical')
         ax11.legend([state_1_e, state_1_e_d],
                 [ r'$dt$', r'$sample~time$'],
+                loc="best",
+                frameon=True, fancybox=True, shadow=False, ncol=2,
+                borderpad=0.5, labelspacing=0.5, handlelength=3, handletextpad=0.1,
+                borderaxespad=0.3, columnspacing=2)
+        ax11.grid(color='#949494', linestyle='-.', linewidth=0.5)
+        ax11.set_xlabel(r"$\textrm{Time}[s]$", labelpad=5)
+
+        fig11.savefig(name + ".pdf")
+        fig11.savefig(name + ".png")
+        return None
+
+def plot_error_norm(fig11, ax11, norm, t, name):
+        t = t[0:norm.shape[1]]
+        ax11.set_xlim((t[0], t[-1]))
+
+        ax11.set_xticklabels([])
+
+        state_1_e_d, = ax11.plot(t[0:t.shape[0]], norm[0, 0:t.shape[0]],
+                    color='#1D2121', lw=1.0, ls="-")
+
+
+        ax11.set_ylabel(r"$[m]$", rotation='vertical')
+        ax11.legend([state_1_e_d],
+                [r'$Error~Norm$'],
                 loc="best",
                 frameon=True, fancybox=True, shadow=False, ncol=2,
                 borderpad=0.5, labelspacing=0.5, handlelength=3, handletextpad=0.1,

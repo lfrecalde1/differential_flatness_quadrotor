@@ -1,0 +1,20 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/fer/ws_ros2/install/my_first_pkg/lib/python3.10/site-packages",
+        "/home/fer/ws_ros2/install/invert_pendulum_msg/local/lib/python3.10/dist-packages",
+        "/home/fer/ws_ros2/install/invert_pendulum/lib/python3.10/site-packages",
+        "/home/fer/ws_ros2/install/differential_flatness/lib/python3.10/site-packages",
+        "/usr/local/webots/lib/controller/python",
+        "/opt/ros/noetic/lib/python3/dist-packages",
+        "//home/fer/pfdq"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/fer/ws_ros2/install/my_first_pkg/lib/python3.10/site-packages",
+        "/home/fer/ws_ros2/install/invert_pendulum_msg/local/lib/python3.10/dist-packages",
+        "/home/fer/ws_ros2/install/invert_pendulum/lib/python3.10/site-packages",
+        "/home/fer/ws_ros2/install/differential_flatness/lib/python3.10/site-packages",
+        "/usr/local/webots/lib/controller/python",
+        "/opt/ros/noetic/lib/python3/dist-packages",
+        "//home/fer/pfdq"
+    ]
+}

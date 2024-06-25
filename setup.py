@@ -20,7 +20,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "planning = differential_flatness.main:main"
+            "planning = differential_flatness.main:main",
+            "flatness_controller = differential_flatness.main_controller:main"
+            
         ],
     },
 )
