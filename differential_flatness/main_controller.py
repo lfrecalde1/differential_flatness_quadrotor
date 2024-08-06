@@ -153,7 +153,7 @@ class DifferentialFlatnessNode(Node):
 
 
     def send_ref(self, h, q):
-        self.ref_msg.header.frame_id = "world"
+        self.ref_msg.header.frame_id = "map"
         self.ref_msg.header.stamp = self.get_clock().now().to_msg()
 
         self.ref_msg.pose.pose.position.x = h[0]
@@ -484,7 +484,7 @@ class DifferentialFlatnessNode(Node):
         qe_yaw = (1/(qe_w**2 + qe_z**2))*np.array([0, 0, qe_z])
 
 
-        M_axu = self.kq_red * qe_red + self.kq_yaw*np.sign(qe_w)*qe_yaw + self.K_omega@(omega_d - omega) + omega_d_d
+        M_axu = self.kq_red * qe_red + self.kq_yaw*np.sign(qe_w)*qe_yaw + self.K_omega@(omega_d - omega)
 
         M = self.J@M_axu + np.cross(omega, self.J@omega)
 

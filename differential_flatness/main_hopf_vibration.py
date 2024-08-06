@@ -10,14 +10,20 @@ import time
 from visualization_msgs.msg import Marker
 from scipy.linalg import expm
 from scipy.spatial.transform import Rotation as R
-
+from differential_flatness import fancy_plots_3, plot_states_position, fancy_plots_4, plot_control_actions_reference, plot_angular_velocities, plot_states_quaternion
+import matplotlib.pyplot as plt
 import threading
+
 class DifferentialFlatnessNode(Node):
     def __init__(self):
         super().__init__('controller')
         # Lets define internal variables
         self.g = 9.81
         self.mQ = 1.0
+        self.Jxx = 0.00305587
+        self.Jyy = 0.00159695
+        self.Jzz = 0.00159687
+        self.J = np.array([[self.Jxx, 0.0, 0.0], [0.0, self.Jyy, 0.0], [0.0, 0.0, self.Jzz]])
 
         # World axis
         self.Zw = np.array([[0.0], [0.0], [1.0]])
@@ -29,9 +35,12 @@ class DifferentialFlatnessNode(Node):
 
         # Final time
         self.t_final = 31
+        self.t_init = 5
 
         # Time Vector
         self.t = np.arange(0, self.t_final + self.ts, self.ts, dtype=np.double)
+        self.t_aux = np.arange(0, self.t_init + self.ts, self.ts, dtype=np.double)
+
 
         # Publisher properties
         self.subscriber_ = self.create_subscription(Odometry, "odom", self.callback_get_odometry, 10)
@@ -49,11 +58,36 @@ class DifferentialFlatnessNode(Node):
         self.control_msg = Control()
         self.publisher_control_ = self.create_publisher(Control, "cmd", 10)
 
+        # States system
+        # Internal States of the system        
+        pos_0 = np.array([0.0, 0.0, 0.0], dtype=np.double)
+        vel_0 = np.array([0.0, 0.0, 0.0], dtype=np.double)
+        omega_0 = np.array([0.0, 0.0, 0.0], dtype=np.double)
+        quat_0 = np.array([1.0, 0.0, 0.0, 0.0])
+        self.x_0 = np.hstack((pos_0, vel_0, quat_0, omega_0))
+        self.x = np.zeros((13, self.t.shape[0] + 1), dtype=np.double)
+        self.x[:, 0] = self.x_0
+        
+        # Control gains
+        self.Kp = np.array([[20.0, 0.0, 0.0], [0.0, 20.0, 0.0], [0.0, 0.0, 20.0]], dtype=np.double)
+        self.Kv = np.array([[6.0, 0.0, 0.0], [0.0, 6.0, 0.0], [0.0, 0.0, 6.0]], dtype=np.double)
+        self.kq_red  = 250
+        self.kq_yaw = 150
+        self.K_omega = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]], dtype=np.double)
+
+
         # Create a thread to run the simulation and viewer
         self.simulation_thread = threading.Thread(target=self.run)
         # Start thread for the simulation
         self.simulation_thread.start()
-
+    def send_control_value(self, u):
+        self.control_msg.thrust = u[0]
+        self.control_msg.torque_x = u[1]
+        self.control_msg.torque_y = u[2]
+        self.control_msg.torque_z = u[3]
+        self.publisher_control_.publish(self.control_msg)
+        return None
+    
     def callback_get_odometry(self, msg):
         x = np.zeros((13, ))
         x[0] = msg.pose.pose.position.x
@@ -197,6 +231,60 @@ class DifferentialFlatnessNode(Node):
         A = np.array([[0.0, -a3, a2], [a3, 0.0, -a1], [-a2, a1, 0.0]], dtype=np.double)
         return A
 
+    def quatTorot_c(self, quat):
+        # Function to transform a quaternion to a rotational matrix
+        # INPUT
+        # quat                                                       - unit quaternion
+        # OUTPUT                                     
+        # R                                                          - rotational matrix
+
+        # Normalized quaternion
+        q = quat
+        q = q/(q.T@q)
+
+        # Create empty variable
+        #q_hat = ca.MX.zeros(3, 3)
+        #q_hat[0, 1] = -q[3]
+        #q_hat[0, 2] = q[2]
+        #q_hat[1, 2] = -q[1]
+        #q_hat[1, 0] = q[3]
+        #q_hat[2, 0] = -q[2]
+        #q_hat[2, 1] = q[1]
+
+        q0 = q[0]
+        q1 = q[1]
+        q2 = q[2]
+        q3 = q[3]
+
+        r11 = q0**2+q1**2-q2**2-q3**2
+        r12 = 2*(q1*q2-q0*q3)
+        r13 = 2*(q1*q3+q0*q2)
+
+        r21 = 2*(q1*q2+q0*q3)
+        r22 = q0**2+q2**2-q1**2-q3**2
+        r23 = 2*(q2*q3-q0*q1)
+
+        r31 = 2*(q1*q3-q0*q2)
+        r32 = 2*(q2*q3+q0*q1)
+        r33 = q0**2+q3**2-q1**2-q2**2
+
+        R = np.array([[r11, r12, r13], [r21, r22, r23], [r31, r32, r33]])
+        return R 
+    def quat_error(self, quat, quad_d):
+        qd = quad_d
+        q = quat
+        qd_conjugate = np.array([qd[0], -qd[1], -qd[2], -qd[3]])
+        quat_d_data = qd_conjugate
+        quaternion = q
+
+        H_r_plus = np.array([[quat_d_data[0], -quat_d_data[1], -quat_d_data[2], -quat_d_data[3]], 
+                             [quat_d_data[1], quat_d_data[0], -quat_d_data[3], quat_d_data[2]], 
+                             [quat_d_data[2], quat_d_data[3], quat_d_data[0], -quat_d_data[1]], 
+                             [quat_d_data[3], -quat_d_data[2], quat_d_data[1], quat_d_data[0]]])
+
+        q_e_aux = H_r_plus @ quaternion
+
+        return q_e_aux
     def trajectory(self, p, p_d, p_dd, p_ddd):
         t = self.t
         a = np.pi/2
@@ -214,7 +302,7 @@ class DifferentialFlatnessNode(Node):
             r[:, k] = expm(self.skew_matrix(w))@p[:, k]
             r_d[:, k] = expm(self.skew_matrix(w))@(p_d[:, k] + self.skew_matrix(w_d)@p[:, k])
             r_dd[:, k] = expm(self.skew_matrix(w))@(self.skew_matrix(w_d)@self.skew_matrix(w_d)@p[:, k] + 2*self.skew_matrix(w_d)@p_d[:, k] + p_dd[:, k] + self.skew_matrix(w_dd)@p[:, k])
-            r_ddd[:, k] = expm(self.skew_matrix(w))@(p_ddd[:, k] + self.skew_matrix(w_ddd)@p[:, k] + 3*self.skew_matrix(w_dd)@p_d[:, k] + 3*self.skew_matrix(w_d)@p_dd[:, k] + self.skew_matrix(w_d)@self.skew_matrix(w_d)@self.skew_matrix(w_d)@p[:, k] + 3*self.skew_matrix(w_d)@self.skew_matrix(w_d)@p_d[:, k])
+            r_ddd[:, k] = expm(self.skew_matrix(w))@(p_ddd[:, k] + self.skew_matrix(w_ddd)@p[:, k] + 3*self.skew_matrix(w_dd)@p_d[:, k] + 3*self.skew_matrix(w_d)@p_dd[:, k] + self.skew_matrix(w_d)@self.skew_matrix(w_d)@self.skew_matrix(w_d)@p[:, k] + 3*self.skew_matrix(w_d)@self.skew_matrix(w_d)@p_d[:, k] + 3 * self.skew_matrix(w_d)@self.skew_matrix(w_dd)@p[:, k])
         return r, r_d, r_dd, r_ddd
 
     def compute_flatness_states(self, hd, hd_p, hd_pp, hd_ppp, theta, theta_p):
@@ -240,12 +328,12 @@ class DifferentialFlatnessNode(Node):
 
         # Angular vlocity
         w = np.zeros((3, hd.shape[1]), dtype=np.double)
-        
 
         for k in range(0, hd.shape[1]):
             # Auxiliary variables
             alpha[:, k] = self.mQ*hd_pp[:, k] + self.mQ*self.g*self.Zw[:, 0]
             beta[:, k] = self.mQ*hd_pp[:, k] + self.mQ*self.g*self.Zw[:, 0]
+            aux = beta[:, k]
 
             # Components Desired Orientation matrix
             Yc[:, k] = np.array([-np.sin(theta[k]), np.cos(theta[k]), 0])
@@ -302,25 +390,71 @@ class DifferentialFlatnessNode(Node):
             # Compute nominal angular velocity
             aux_angular_velocity = A_1@b
             w[:, k] = aux_angular_velocity[:, 0]
-            wx = w[0, k]
-            wy = w[1, k]
-            wz = w[2, k]
+            # Compute nominal force of the in the body frame
+        return q, w, f
 
-        return q
+    def position_control(self, x, xd, x_d, xd_d, xd_dd, quat, psi, omega, omega_d):
+        kp = self.Kp
+        kv = self.Kv
+        aux_variable = kp@(xd - x) + kv@(xd_d - x_d) + xd_dd
+        force_zb = self.mQ * (aux_variable + self.g*self.Zw[:, 0])
 
-    # Loop system
+        
+
+        R_b = self.quatTorot_c(quat)
+        Zb = R_b[:, 2]
+
+        force = np.dot(Zb, force_zb)
+
+        Zb_d = force_zb/(np.linalg.norm(force_zb))
+        Xc_d = np.array([ np.cos(psi), np.sin(psi), 0])
+        Yb_d = (np.cross(Zb_d, Xc_d))/(np.linalg.norm(np.cross(Zb_d, Xc_d)))
+        Xb_d = np.cross(Yb_d, Zb_d)
+
+        R_d = np.array([[Xb_d[0], Yb_d[0], Zb_d[0]], [Xb_d[1], Yb_d[1], Zb_d[1]], [Xb_d[2], Yb_d[2], Zb_d[2]]])
+        r_d = R.from_matrix(R_d)
+        quad_d_aux = r_d.as_quat()
+        quad_d = np.array([quad_d_aux[3], quad_d_aux[0], quad_d_aux[1], quad_d_aux[2]])
+
+        quat_error = self.quat_error(quad_d, quat)
+
+        qe_w = quat_error[0]
+        qe_x = quat_error[1]
+        qe_y = quat_error[2]
+        qe_z = quat_error[3]
+
+        qe_red = (1/(qe_w**2 + qe_z**2))*np.array([qe_w*qe_x-qe_y*qe_z, qe_w*qe_y + qe_x*qe_z, 0])
+        qe_yaw = (1/(qe_w**2 + qe_z**2))*np.array([0, 0, qe_z])
+
+
+        M_axu = self.kq_red * qe_red + self.kq_yaw*np.sign(qe_w)*qe_yaw + self.K_omega@(omega_d - omega)
+
+        M = self.J@M_axu + np.cross(omega, self.J@omega)
+
+        return force, M
+    
     def run(self):
 
         # Trajectory Parameters 
-        p = 1
-        w_c = 4
+        p = 2
+        w_c = 2
 
         # Compute desired Quaternions
         pd, theta, pd_p, theta_p, pd_pp, pd_ppp, pd_pppp, theta_pp = self.ref_circular_trajectory(p, w_c)
-        rd, rd_p, rd_pp, rd_ppp = self.trajectory(pd, pd_p, pd_pp, pd_pppp)
-        qd = self.compute_flatness_states(rd, rd_p, rd_pp, rd_ppp, theta, theta_p)
+        rd, rd_p, rd_pp, rd_ppp = self.trajectory(pd, pd_p, pd_pp, pd_ppp)
+        qd, w_d, f_d = self.compute_flatness_states(rd, rd_p, rd_pp, rd_ppp, theta, theta_p)
+        #qd_2 = self.compute_flatness_states_quaternion(rd, rd_p, rd_pp, rd_ppp, theta, theta_p)
+        F = np.zeros((1, self.t.shape[0]), dtype=np.double)
+        M = np.zeros((3, self.t.shape[0]), dtype=np.double)
 
+        # Generalized control actions
+        u = np.zeros((4, self.t.shape[0]), dtype=np.double)
 
+        for k in range(0, self.t_aux.shape[0]):
+            tic = time.time()
+            self.x[:, 0] = self.x_0
+            while (time.time() - tic <= self.ts):
+                pass
         # Init marker
         self.init_marker(rd[:, 0])
 
@@ -330,15 +464,39 @@ class DifferentialFlatnessNode(Node):
             tic = time.time()
             self.send_marker(rd[:, k])
             self.send_ref(rd[:, k], qd[:, k])
+            # Compute Control Actions
+            u[0, k], u[1:4, k] = self.position_control(self.x[0:3, k], rd[0:3, k], self.x[3:6, k], rd_p[0:3, k], rd_pp[0:3, k], self.x[6:10, k], theta[k], self.x[10:13, k], w_d[:, k])
+            self.send_control_value(u[:, k])
+            F[:, k] = u[0, k]
+            M[:, k] = u[1:4, k]
 
 
             self.get_logger().info("Quadrotor Control Hopf Vibration")
+
+            # System evolution
+            self.x[:, k+1] = self.x_0
 
             # Section to guarantee same sample times
             while (time.time() - tic <= self.ts):
                 pass
             toc = time.time() - tic
             print(toc)
+        
+         # Control Actions
+        fig11, ax11, ax21, ax31, ax41 = fancy_plots_4()
+        plot_states_quaternion(fig11, ax11, ax21, ax31, ax41, self.x[6:10, :], qd, self.t, "Quaternions Orientations")
+        plt.show() 
+
+        # Results of the system
+        fig12, ax12, ax22, ax32 = fancy_plots_3()
+        plot_states_position(fig12, ax12, ax22, ax32, self.x[0:3, :], rd[0:3, :], self.t, "Position of the System No drag")
+        plt.show()
+
+        # Control Actions
+        fig13, ax13, ax23, ax33, ax43 = fancy_plots_4()
+        plot_control_actions_reference(fig13, ax13, ax23, ax33, ax43, F, M, f_d, M, self.t, "Control Actions of the System No Drag")
+        plt.show()
+        return None
 
 
 def main(args=None):
