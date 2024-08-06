@@ -21,8 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             "planning = differential_flatness.main:main",
-            "flatness_controller = differential_flatness.main_controller:main"
-            
+            "flatness_controller = differential_flatness.main_controller:main",
+            "hopf_controller = differential_flatness.main_hopf_vibration:main"
         ],
     },
 )

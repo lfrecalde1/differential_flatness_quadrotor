@@ -25,7 +25,7 @@ class DifferentialFlatnessNode(Node):
         super().__init__('controller')
         # Lets define internal variables
         self.g = 9.81
-        self.mQ = 1.0 + 0.15
+        self.mQ = 1.0
 
         # World axis
         self.Zw = np.array([[0.0], [0.0], [1.0]])
@@ -37,10 +37,12 @@ class DifferentialFlatnessNode(Node):
         self.t_N = 0.1
 
         # Final time
-        self.t_final = 30
+        self.t_final = 60
+        self.t_init = 5
 
         # Time Vector
         self.t = np.arange(0, self.t_final + self.ts, self.ts, dtype=np.double)
+        self.t_aux = np.arange(0, self.t_init + self.ts, self.ts, dtype=np.double)
 
         # Inertia Matrix
         self.Jxx = 0.00305587
@@ -141,9 +143,9 @@ class DifferentialFlatnessNode(Node):
         rotational_matrix = rotational.as_matrix()
         vi = rotational_matrix@vb
 
-        x[3] = vi[0, 0]
-        x[4] = vi[1, 0]
-        x[5] = vi[2, 0]
+        x[3] = vx_b
+        x[4] = vy_b
+        x[5] = vz_b
 
         self.x_0 = x
         # Send Message
@@ -286,8 +288,7 @@ class DifferentialFlatnessNode(Node):
                 else:
                     q[:, k] = q[:, k]
             else:
-                None
-
+                pass
             # Compute nominal force of the in the body frame
             f[:, k] = np.dot(Zb[:, k], self.mQ*hd_pp[:, k] + self.mQ*self.g*self.Zw[:, 0])
 
@@ -381,34 +382,20 @@ class DifferentialFlatnessNode(Node):
         # Generalized control actions
         u = np.zeros((4, self.t.shape[0]), dtype=np.double)
 
-
-        # Constraints on control actions
-        F_max = self.mQ*self.g + 20
-        F_min = 0
-        tau_1_max = 0.1
-        tau_1_min = -0.1
-        tau_2_max = 0.1
-        tau_2_min = -0.1
-        tau_3_max = 0.1
-        taux_3_min = -0.1
-
-        for k in range(500):
+        for k in range(0, self.t_aux.shape[0]):
+            tic = time.time()
             self.x[:, 0] = self.x_0
+            while (time.time() - tic <= self.ts):
+                pass
 
         # Compute desired Quaternions
-        # Send odometry initial conditions
         self.send_ref(self.h_d[:, 0], self.q_d[:, 0])
 
-        # Init Trajectory
-        # Empty vector error
-
         h_e = np.zeros((1, self.t.shape[0]), dtype=np.double)
-
 
         for k in range(0, self.t.shape[0]):
             # Get model
             tic = time.time()
-            print(self.x[:, k])
 
             # Send message with desired trayectory
             self.send_ref(self.h_d[:, k], self.q_d[:, k])
@@ -427,10 +414,20 @@ class DifferentialFlatnessNode(Node):
 
             # Section to guarantee same sample times
             while (time.time() - tic <= self.ts):
-                None
+                pass
             toc = time.time() - tic
             print(toc)
 
+        # Set Control action to hover
+        for k in range(0, self.t_aux.shape[0]):
+            tic = time.time()
+            hover = np.array([self.mQ * self.g, 0, 0, 0])
+            self.send_control_value(hover)
+            # Section to guarantee same sample times
+            while (time.time() - tic <= self.ts):
+                pass
+        
+        # Results of the system
         fig11, ax11, ax21, ax31 = fancy_plots_3()
         plot_states_position(fig11, ax11, ax21, ax31, self.x[0:3, :], self.h_d[0:3, :], self.t, "Position of the System No drag")
         plt.show()
@@ -506,30 +503,30 @@ class DifferentialFlatnessNode(Node):
         r_min = (r_max)/self.n
         Q = mul
 
-        xd = 4 * np.sin(mul * 0.04* t)
-        yd = 4 * np.sin(mul * 0.08 * t)
-        zd = 1 * np.sin(0.05*Q*t) + 4
+        xd = 2 * np.sin(mul * 0.04* t)
+        yd = 2 * np.sin(mul * 0.08 * t)
+        zd = 1 * np.sin(0.1*Q*t) + 4
 
         # Compute velocities
         # Compute velocities
-        xd_p = 4 * mul * 0.04 * np.cos(mul * 0.04 * t)
-        yd_p = 4 * mul * 0.08 * np.cos(mul * 0.08 * t)
-        zd_p = 0.05 * Q * np.cos(0.05*Q * t)
+        xd_p = 2 * mul * 0.04 * np.cos(mul * 0.04 * t)
+        yd_p = 2 * mul * 0.08 * np.cos(mul * 0.08 * t)
+        zd_p = 0.1 * Q * np.cos(0.1*Q * t)
 
         # Compute acceleration
-        xd_pp = -4 * mul * mul * 0.04 * 0.04 * np.sin(mul * 0.04 * t)
-        yd_pp = -4 * mul * mul * 0.08 * 0.08 * np.sin(mul * 0.08 * t);  
-        zd_pp = -0.05 * 0.05 * Q * Q *  np.sin(0.05*Q * t)
+        xd_pp = -2 * mul * mul * 0.04 * 0.04 * np.sin(mul * 0.04 * t)
+        yd_pp = -2 * mul * mul * 0.08 * 0.08 * np.sin(mul * 0.08 * t);  
+        zd_pp = -0.1 * 0.1 * Q * Q *  np.sin(0.1*Q * t)
 
         # Compute jerk
-        xd_ppp = -4 * mul * mul * mul * 0.04 * 0.04 * 0.04 * np.cos(mul * 0.04 * t)
-        yd_ppp = -4 * mul * mul * mul * 0.08 * 0.08 * 0.08 * np.cos(mul * 0.08 * t);  
-        zd_ppp = -0.05 * 0.05 * 0.05* Q * Q * Q * np.cos(0.05*Q * t)
+        xd_ppp = -2 * mul * mul * mul * 0.04 * 0.04 * 0.04 * np.cos(mul * 0.04 * t)
+        yd_ppp = -2 * mul * mul * mul * 0.08 * 0.08 * 0.08 * np.cos(mul * 0.08 * t);  
+        zd_ppp = -0.1 * 0.1 * 0.1* Q * Q * Q * np.cos(0.1*Q * t)
 
         # Compute snap
-        xd_pppp = 4 * mul * mul * mul * mul * 0.04 * 0.04 * 0.04 * 0.04 * np.sin(mul * 0.04 * t)
-        yd_pppp = 4 * mul * mul * mul * mul * 0.08 * 0.08 * 0.08 * 0.08 * np.sin(mul * 0.08 * t);  
-        zd_pppp = 0.05 * 0.05 * 0.05 * 0.05 * Q * Q * Q * Q * np.sin(0.05*Q * t)
+        xd_pppp = 2 * mul * mul * mul * mul * 0.04 * 0.04 * 0.04 * 0.04 * np.sin(mul * 0.04 * t)
+        yd_pppp = 2 * mul * mul * mul * mul * 0.08 * 0.08 * 0.08 * 0.08 * np.sin(mul * 0.08 * t);  
+        zd_pppp = 0.1 * 0.1 * 0.1 * 0.1 * Q * Q * Q * Q * np.sin(0.1*Q * t)
 
         # Compute angular displacement
         theta = np.arctan2(yd_p, xd_p)
@@ -562,6 +559,8 @@ def main(args=None):
         rclpy.spin(planning_node)  # Will run until manually interrupted
     except KeyboardInterrupt:
         planning_node.get_logger().info('Simulation stopped manually.')
+        planning_node.destroy_node()
+        rclpy.shutdown()
     finally:
         planning_node.destroy_node()
         rclpy.shutdown()
