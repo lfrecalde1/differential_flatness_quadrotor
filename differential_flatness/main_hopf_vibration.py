@@ -71,9 +71,9 @@ class DifferentialFlatnessNode(Node):
         # Control gains
         self.Kp = np.array([[20.0, 0.0, 0.0], [0.0, 20.0, 0.0], [0.0, 0.0, 20.0]], dtype=np.double)
         self.Kv = np.array([[6.0, 0.0, 0.0], [0.0, 6.0, 0.0], [0.0, 0.0, 6.0]], dtype=np.double)
-        self.kq_red  = 250
-        self.kq_yaw = 150
-        self.K_omega = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]], dtype=np.double)
+        self.kq_red  = 350
+        self.kq_yaw = 250
+        self.K_omega = np.array([[20.0, 0.0, 0.0], [0.0, 20.0, 0.0], [0.0, 0.0, 20.0]], dtype=np.double)
 
 
         # Create a thread to run the simulation and viewer
@@ -285,27 +285,45 @@ class DifferentialFlatnessNode(Node):
         q_e_aux = H_r_plus @ quaternion
 
         return q_e_aux
-    def trajectory(self, p, p_d, p_dd, p_ddd):
+
+    def trajectory(self, p, p_d, p_dd, p_ddd, p_dddd):
         t = self.t
         a = np.pi/2
+        b = 0.05
         r = np.zeros((3, p_d.shape[1]), dtype=np.double)
         r_d = np.zeros((3, p_d.shape[1]), dtype=np.double)
         r_dd = np.zeros((3, p_d.shape[1]), dtype=np.double)
         r_ddd = np.zeros((3, p_d.shape[1]), dtype=np.double)
+        r_dddd = np.zeros((3, p_d.shape[1]), dtype=np.double)
 
         for k in range(0, p_d.shape[1]):
-            w = np.array([a*np.sin(0.1*t[k]), 0.0, 0.0], dtype=np.double)
-            w_d = np.array([0.1*a*np.cos(0.1*t[k]), 0.0, 0.0], dtype=np.double)
-            w_dd = np.array([-0.1*0.1*a*np.sin(0.1*t[k]), 0.0, 0.0], dtype=np.double)
-            w_ddd = np.array([0.1*0.1*0.1*a*np.cos(0.1*t[k]), 0.0, 0.0], dtype=np.double)
+            w = np.array([a*np.sin(b*t[k]), 0.0, 0.0], dtype=np.double)
+            w_d = np.array([b*a*np.cos(b*t[k]), 0.0, 0.0], dtype=np.double)
+            w_dd = np.array([-b*b*a*np.sin(b*t[k]), 0.0, 0.0], dtype=np.double)
+            w_ddd = np.array([-b*b*b*a*np.cos(b*t[k]), 0.0, 0.0], dtype=np.double)
+            w_dddd = np.array([b*b*b*b*a*np.sin(b*t[k]), 0.0, 0.0], dtype=np.double)
+
+            # Aux variables
+            skew_w_d = self.skew_matrix(w_d)
+            skew_w_d_2 = self.skew_matrix(w_d)@self.skew_matrix(w_d)
+            skew_w_d_3 = self.skew_matrix(w_d)@self.skew_matrix(w_d)@self.skew_matrix(w_d)
+            skew_w_d_4 = self.skew_matrix(w_d)@self.skew_matrix(w_d)@self.skew_matrix(w_d)@self.skew_matrix(w_d)
+
+            skew_w_dd = self.skew_matrix(w_dd)
+            skew_w_dd_2 = self.skew_matrix(w_dd)@self.skew_matrix(w_dd)
+
+            skew_w_ddd = self.skew_matrix(w_ddd)
+
+            skew_w_dddd = self.skew_matrix(w_dddd)
 
             r[:, k] = expm(self.skew_matrix(w))@p[:, k]
-            r_d[:, k] = expm(self.skew_matrix(w))@(p_d[:, k] + self.skew_matrix(w_d)@p[:, k])
-            r_dd[:, k] = expm(self.skew_matrix(w))@(self.skew_matrix(w_d)@self.skew_matrix(w_d)@p[:, k] + 2*self.skew_matrix(w_d)@p_d[:, k] + p_dd[:, k] + self.skew_matrix(w_dd)@p[:, k])
-            r_ddd[:, k] = expm(self.skew_matrix(w))@(p_ddd[:, k] + self.skew_matrix(w_ddd)@p[:, k] + 3*self.skew_matrix(w_dd)@p_d[:, k] + 3*self.skew_matrix(w_d)@p_dd[:, k] + self.skew_matrix(w_d)@self.skew_matrix(w_d)@self.skew_matrix(w_d)@p[:, k] + 3*self.skew_matrix(w_d)@self.skew_matrix(w_d)@p_d[:, k] + 3 * self.skew_matrix(w_d)@self.skew_matrix(w_dd)@p[:, k])
-        return r, r_d, r_dd, r_ddd
+            r_d[:, k] = expm(self.skew_matrix(w))@(p_d[:, k] + skew_w_d@p[:, k])
+            r_dd[:, k] = expm(self.skew_matrix(w))@(skew_w_d_2@p[:, k] + 2*skew_w_d@p_d[:, k] + p_dd[:, k] + skew_w_dd@p[:, k])
+            r_ddd[:, k] = expm(self.skew_matrix(w))@(p_ddd[:, k] + skew_w_ddd@p[:, k] + 3*skew_w_dd@p_d[:, k] + 3*skew_w_d@p_dd[:, k] + skew_w_d_3@p[:, k] + 3*skew_w_d_2@p_d[:, k] + 3 * skew_w_d@skew_w_dd@p[:, k])
+            r_dddd[:, k] = expm(self.skew_matrix(w))@(p_dddd[:, k] + skew_w_dddd@p[:, k] + 4 * skew_w_ddd@p_d[:, k] + 6*skew_w_dd@p_dd[:, k] + 4 * skew_w_d@p_ddd[:, k] + skew_w_d_4@p[:, k] + 3*skew_w_dd_2@p[:, k] + 4*skew_w_d_3@p_d[:, k] + 6*skew_w_d_2@p_dd[:, k] + 6*skew_w_d_2@skew_w_dd@p[:, k] + 4*skew_w_d@skew_w_ddd@p[:, k] + 12*skew_w_d@skew_w_dd@p_d[:, k])
+        return r, r_d, r_dd, r_ddd, r_dddd
 
-    def compute_flatness_states(self, hd, hd_p, hd_pp, hd_ppp, theta, theta_p):
+    def compute_flatness_states(self, hd, hd_p, hd_pp, hd_ppp, hd_pppp, theta, theta_p, theta_pp):
 
         # Empty vector for the internal values
 
@@ -325,9 +343,14 @@ class DifferentialFlatnessNode(Node):
         q = np.zeros((4, hd.shape[1]), dtype=np.double)
 
         f = np.zeros((1, hd.shape[1]), dtype=np.double)
+        f_p = np.zeros((1, hd.shape[1]), dtype=np.double)
 
         # Angular vlocity
         w = np.zeros((3, hd.shape[1]), dtype=np.double)
+
+        # Angular acceleration
+        w_p = np.zeros((3, hd.shape[1]), dtype=np.double)
+        M = np.zeros((3, hd.shape[1]), dtype=np.double)
 
         for k in range(0, hd.shape[1]):
             # Auxiliary variables
@@ -390,10 +413,39 @@ class DifferentialFlatnessNode(Node):
             # Compute nominal angular velocity
             aux_angular_velocity = A_1@b
             w[:, k] = aux_angular_velocity[:, 0]
-            # Compute nominal force of the in the body frame
-        return q, w, f
+            wx = w[0, k]
+            wy = w[1, k]
+            wz = w[2, k]
 
-    def position_control(self, x, xd, x_d, xd_d, xd_dd, quat, psi, omega, omega_d):
+            
+            # Time derivative of the force respect with the body axis
+            f_p[:, k] = self.mQ*np.dot(Zb[:, k], hd_ppp[:, k])
+
+            chi_1 = theta_pp[k] * np.dot(Xc[:, k], Xb[:, k])
+            chi_2 = -2*theta_p[k] * wy * np.dot(Xc[:, k], Zb[:, k])
+            chi_3 =  -wy * wx * np.dot(Yc[:, k], Yb[:, k])
+            chi_4 =  2* theta_p[k] * wz * np.dot(Xc[:, k], Yb[:, k])
+            chi_5 =  -wz*wx*np.dot(Yc[:, k], Zb[:, k])
+
+            chi = chi_1 + chi_2 + chi_3 + chi_4 + chi_5
+
+            # Compute angular accelerations of the system
+            B1 = self.mQ*np.dot(Xb[:, k], hd_pppp[:, k]) - f[:, k]*wx*wz - 2*f_p[:, k]*wy
+            B2 = -self.mQ*np.dot(Yb[:, k], hd_pppp[:, k]) -2 * f_p[:, k] * wx + f[:, k]*wy*wz
+            B3 = chi
+
+            B = np.array([[B1], [B2], [B3]], dtype=np.double)
+
+            # Computing angular acceleration
+            aux_angular_acce = A_1@B
+            w_p[:, k] = aux_angular_acce[:, 0]
+            aux_torque = self.J@w_p[:, k] + np.cross(w[:, k], self.J@w[:, k])
+            # Compute torque
+            M[:, k] = aux_torque
+            # Compute nominal force of the in the body frame
+        return q, w, f, w_p
+
+    def position_control(self, x, xd, x_d, xd_d, xd_dd, quat, psi, omega, omega_d, omega_dd):
         kp = self.Kp
         kv = self.Kv
         aux_variable = kp@(xd - x) + kv@(xd_d - x_d) + xd_dd
@@ -427,7 +479,7 @@ class DifferentialFlatnessNode(Node):
         qe_yaw = (1/(qe_w**2 + qe_z**2))*np.array([0, 0, qe_z])
 
 
-        M_axu = self.kq_red * qe_red + self.kq_yaw*np.sign(qe_w)*qe_yaw + self.K_omega@(omega_d - omega)
+        M_axu = self.kq_red * qe_red + self.kq_yaw*np.sign(qe_w)*qe_yaw + self.K_omega@(omega_d - omega) + omega_dd
 
         M = self.J@M_axu + np.cross(omega, self.J@omega)
 
@@ -437,12 +489,12 @@ class DifferentialFlatnessNode(Node):
 
         # Trajectory Parameters 
         p = 2
-        w_c = 2
+        w_c = 3.5
 
         # Compute desired Quaternions
         pd, theta, pd_p, theta_p, pd_pp, pd_ppp, pd_pppp, theta_pp = self.ref_circular_trajectory(p, w_c)
-        rd, rd_p, rd_pp, rd_ppp = self.trajectory(pd, pd_p, pd_pp, pd_ppp)
-        qd, w_d, f_d = self.compute_flatness_states(rd, rd_p, rd_pp, rd_ppp, theta, theta_p)
+        rd, rd_p, rd_pp, rd_ppp, rd_pppp = self.trajectory(pd, pd_p, pd_pp, pd_ppp, pd_pppp)
+        qd, w_d, f_d, w_dd = self.compute_flatness_states(rd, rd_p, rd_pp, rd_ppp, rd_pppp, theta, theta_p, theta_pp)
         #qd_2 = self.compute_flatness_states_quaternion(rd, rd_p, rd_pp, rd_ppp, theta, theta_p)
         F = np.zeros((1, self.t.shape[0]), dtype=np.double)
         M = np.zeros((3, self.t.shape[0]), dtype=np.double)
@@ -465,7 +517,7 @@ class DifferentialFlatnessNode(Node):
             self.send_marker(rd[:, k])
             self.send_ref(rd[:, k], qd[:, k])
             # Compute Control Actions
-            u[0, k], u[1:4, k] = self.position_control(self.x[0:3, k], rd[0:3, k], self.x[3:6, k], rd_p[0:3, k], rd_pp[0:3, k], self.x[6:10, k], theta[k], self.x[10:13, k], w_d[:, k])
+            u[0, k], u[1:4, k] = self.position_control(self.x[0:3, k], rd[0:3, k], self.x[3:6, k], rd_p[0:3, k], rd_pp[0:3, k], self.x[6:10, k], theta[k], self.x[10:13, k], w_d[:, k], w_dd[:, k])
             self.send_control_value(u[:, k])
             F[:, k] = u[0, k]
             M[:, k] = u[1:4, k]
