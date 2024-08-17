@@ -303,19 +303,23 @@ class DifferentialFlatnessNode(Node):
             w_ddd = np.array([-b*b*b*a*np.cos(b*t[k]), 0.0, 0.0], dtype=np.double)
             w_dddd = np.array([b*b*b*b*a*np.sin(b*t[k]), 0.0, 0.0], dtype=np.double)
 
-            # Aux variables
+            # Aux variables first derivative
             skew_w_d = self.skew_matrix(w_d)
             skew_w_d_2 = self.skew_matrix(w_d)@self.skew_matrix(w_d)
             skew_w_d_3 = self.skew_matrix(w_d)@self.skew_matrix(w_d)@self.skew_matrix(w_d)
             skew_w_d_4 = self.skew_matrix(w_d)@self.skew_matrix(w_d)@self.skew_matrix(w_d)@self.skew_matrix(w_d)
 
+            # Aux second derivative
             skew_w_dd = self.skew_matrix(w_dd)
             skew_w_dd_2 = self.skew_matrix(w_dd)@self.skew_matrix(w_dd)
 
+            # Aux third derivative
             skew_w_ddd = self.skew_matrix(w_ddd)
 
+            # Aux fourth derivative
             skew_w_dddd = self.skew_matrix(w_dddd)
 
+            # New Desired reference
             r[:, k] = expm(self.skew_matrix(w))@p[:, k]
             r_d[:, k] = expm(self.skew_matrix(w))@(p_d[:, k] + skew_w_d@p[:, k])
             r_dd[:, k] = expm(self.skew_matrix(w))@(skew_w_d_2@p[:, k] + 2*skew_w_d@p_d[:, k] + p_dd[:, k] + skew_w_dd@p[:, k])
@@ -326,7 +330,6 @@ class DifferentialFlatnessNode(Node):
     def compute_flatness_states(self, hd, hd_p, hd_pp, hd_ppp, hd_pppp, theta, theta_p, theta_pp):
 
         # Empty vector for the internal values
-
         alpha =  np.zeros((3, hd.shape[1]), dtype=np.double)
         beta =  np.zeros((3, hd.shape[1]), dtype=np.double)
 
@@ -416,7 +419,6 @@ class DifferentialFlatnessNode(Node):
             wx = w[0, k]
             wy = w[1, k]
             wz = w[2, k]
-
             
             # Time derivative of the force respect with the body axis
             f_p[:, k] = self.mQ*np.dot(Zb[:, k], hd_ppp[:, k])
