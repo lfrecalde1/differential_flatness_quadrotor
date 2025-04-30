@@ -11,8 +11,7 @@ from differential_flatness import fancy_plots_3, plot_states_position, fancy_plo
 from differential_flatness import fancy_plots_1, plot_error_norm
 import matplotlib.pyplot as plt
 from rclpy.duration import Duration
-from differential_flatness import create_ocp_solver
-from acados_template import AcadosOcpSolver, AcadosSimSolver
+#from differential_flatness import create_ocp_solver
 from visualization_msgs.msg import Marker
 import time
 from scipy.spatial.transform import Rotation as R
@@ -105,7 +104,7 @@ class DifferentialFlatnessNode(Node):
 
         # Max velocity and acceleration
         self.V_max = 5
-        self.a_max = 7
+        self.a_max = 10
         self.n = 1
 
         self.compute_reference()
@@ -143,9 +142,9 @@ class DifferentialFlatnessNode(Node):
         rotational_matrix = rotational.as_matrix()
         vi = rotational_matrix@vb
 
-        x[3] = vx_b
-        x[4] = vy_b
-        x[5] = vz_b
+        x[3] = vi[0]
+        x[4] = vi[1]
+        x[5] = vi[2]
 
         self.x_0 = x
         # Send Message
