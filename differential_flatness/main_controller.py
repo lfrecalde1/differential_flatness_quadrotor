@@ -103,8 +103,8 @@ class DifferentialFlatnessNode(Node):
         self.K_omega = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]], dtype=np.double)
 
         # Max velocity and acceleration
-        self.V_max = 5
-        self.a_max = 10
+        self.V_max = 1
+        self.a_max = 2
         self.n = 1
 
         self.compute_reference()
@@ -415,7 +415,7 @@ class DifferentialFlatnessNode(Node):
             while (time.time() - tic <= self.ts):
                 pass
             toc = time.time() - tic
-            print(toc)
+            #print(toc)
 
         # Set Control action to hover
         for k in range(0, self.t_aux.shape[0]):
