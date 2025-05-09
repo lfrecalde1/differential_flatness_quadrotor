@@ -3,25 +3,21 @@
 import rclpy
 from rclpy.node import Node
 import numpy as np
-from std_msgs.msg import Header
-from std_msgs.msg import Float64
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Point
-from differential_flatness import fancy_plots_3, plot_states_position, fancy_plots_4, plot_control_actions_reference, plot_angular_velocities
-from differential_flatness import fancy_plots_1, plot_error_norm
-import matplotlib.pyplot as plt
-from rclpy.duration import Duration
-#from differential_flatness import create_ocp_solver
-from visualization_msgs.msg import Marker
 import time
 from scipy.spatial.transform import Rotation as R
-from mujoco_msgs.msg import Control
 import threading
+from geometry_msgs.msg import Wrench
+
 
 
 class DifferentialFlatnessNode(Node):
     def __init__(self):
-        super().__init__('controller')
+        super().__init__('geometric_controller')
+
+        self.declare_parameter('world_frame_id', 'world')
+        self.world_frame_id = self.get_parameter('world_frame_id').get_parameter_value().string_value
+
         # Lets define internal variables
         self.g = 9.81
         self.mQ = 1.0
@@ -36,8 +32,8 @@ class DifferentialFlatnessNode(Node):
         self.t_N = 0.1
 
         # Final time
-        self.t_final = 60
-        self.t_init = 5
+        self.t_final = 150
+        self.t_init = 0.5
 
         # Time Vector
         self.t = np.arange(0, self.t_final + self.ts, self.ts, dtype=np.double)
@@ -91,12 +87,12 @@ class DifferentialFlatnessNode(Node):
         self.publisher_ref_ = self.create_publisher(Odometry, "ref", 10)
 
         # Control
-        self.control_msg = Control()
-        self.publisher_control_ = self.create_publisher(Control, "cmd", 10)
+        self.control_msg = Wrench()
+        self.publisher_control_ = self.create_publisher(Wrench, "cmd", 10)
 
 
         # Control gains
-        self.Kp = np.array([[15.0, 0.0, 0.0], [0.0, 15.0, 0.0], [0.0, 0.0, 15.0]], dtype=np.double)
+        self.Kp = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]], dtype=np.double)
         self.Kv = np.array([[6.0, 0.0, 0.0], [0.0, 6.0, 0.0], [0.0, 0.0, 6.0]], dtype=np.double)
         self.kq_red  = 250
         self.kq_yaw = 40
@@ -106,14 +102,29 @@ class DifferentialFlatnessNode(Node):
         self.V_max = 1
         self.a_max = 2
         self.n = 1
+        self.flag = 0
 
-        self.compute_reference()
 
-        # Create a thread to run the simulation and viewer
-        self.simulation_thread = threading.Thread(target=self.run)
-        # Start thread for the simulation
-        self.simulation_thread.start()
+        # No thread running initially
+        self.simulation_thread = None
+
+        # Start first simulation run
+        self.start_simulation()
+
+        # Check every 1 second if run() has finished, and restart if needed
+        self.create_timer(0.2, self.check_and_restart_simulation)
+
         
+    def start_simulation(self):
+        if self.simulation_thread is None or not self.simulation_thread.is_alive():
+            self.get_logger().info(f"Starting simulation run with flag = {self.flag}")
+            self.simulation_thread = threading.Thread(target=self.run)
+            self.simulation_thread.start()
+
+    def check_and_restart_simulation(self):
+        if self.simulation_thread is None or not self.simulation_thread.is_alive():
+            self.get_logger().info("Previous simulation finished. Restarting...")
+            self.start_simulation()
 
     def callback_get_odometry(self, msg):
 
@@ -152,7 +163,7 @@ class DifferentialFlatnessNode(Node):
 
 
     def send_ref(self, h, q):
-        self.ref_msg.header.frame_id = "map"
+        self.ref_msg.header.frame_id = self.world_frame_id
         self.ref_msg.header.stamp = self.get_clock().now().to_msg()
 
         self.ref_msg.pose.pose.position.x = h[0]
@@ -225,11 +236,20 @@ class DifferentialFlatnessNode(Node):
         R = np.array([[r11, r12, r13], [r21, r22, r23], [r31, r32, r33]])
         return R 
 
-    def compute_reference(self):
-        aux_velocity = 10
+    def compute_reference(self, flag):
+        aux_velocity = 1
+        a = 0.04
+        b = 0.08
 
         # Desired Flat outputs
-        hd, theta, hd_p, theta_p, hd_pp, hd_ppp, hd_pppp, theta_pp = self.ref_trajectory_agresive(aux_velocity)
+        if flag == 0 :
+            hd, theta, hd_p, theta_p, hd_pp, hd_ppp, hd_pppp, theta_pp = self.ref_trajectory_agresive(30, a, b)
+
+        elif flag == 1 :
+            hd, theta, hd_p, theta_p, hd_pp, hd_ppp, hd_pppp, theta_pp = self.ref_trajectory_agresive(30, a, b)
+
+        elif flag == 2 :
+            hd, theta, hd_p, theta_p, hd_pp, hd_ppp, hd_pppp, theta_pp = self.ref_trajectory_agresive(30, a, b)
 
         # Empty vector for the internal values
 
@@ -369,7 +389,14 @@ class DifferentialFlatnessNode(Node):
 
         self.q_d = q
 
+    def swith_trajectories(self, flag):
+        self.compute_reference(flag)
+        return None
+
     def run(self):
+        # generate desired path
+        self.swith_trajectories(self.flag)
+
         # Prediction Node of the NMPC formulation
         N = np.arange(0, self.t_N + self.ts, self.ts)
         N_prediction = N.shape[0]
@@ -415,37 +442,16 @@ class DifferentialFlatnessNode(Node):
             while (time.time() - tic <= self.ts):
                 pass
             toc = time.time() - tic
-            #print(toc)
 
-        # Set Control action to hover
-        for k in range(0, self.t_aux.shape[0]):
-            tic = time.time()
-            hover = np.array([self.mQ * self.g, 0, 0, 0])
-            self.send_control_value(hover)
-            # Section to guarantee same sample times
-            while (time.time() - tic <= self.ts):
-                pass
-        
-        # Results of the system
-        fig11, ax11, ax21, ax31 = fancy_plots_3()
-        plot_states_position(fig11, ax11, ax21, ax31, self.x[0:3, :], self.h_d[0:3, :], self.t, "Position of the System No drag")
-        plt.show()
-
-        # Control Actions
-        fig13, ax13, ax23, ax33, ax43 = fancy_plots_4()
-        plot_control_actions_reference(fig13, ax13, ax23, ax33, ax43, F, M, self.f_d, self.M_d, self.t, "Control Actions of the System No Drag")
-        plt.show()
-
-        fig14, ax14 = fancy_plots_1()
-        plot_error_norm(fig14, ax14, h_e, self.t, "Error Norm of the System No Drag")
-        plt.show()
-        return None
+        self.flag = (self.flag + 1) % 8
 
     def send_control_value(self, u):
-        self.control_msg.thrust = u[0]
-        self.control_msg.torque_x = u[1]
-        self.control_msg.torque_y = u[2]
-        self.control_msg.torque_z = u[3]
+        self.control_msg.force.x = 0.0
+        self.control_msg.force.y = 0.0
+        self.control_msg.force.z = u[0]
+        self.control_msg.torque.x = u[1]
+        self.control_msg.torque.y = u[2]
+        self.control_msg.torque.z = u[3]
         self.publisher_control_.publish(self.control_msg)
         return None
 
@@ -488,7 +494,8 @@ class DifferentialFlatnessNode(Node):
         M = self.J@M_axu + np.cross(omega, self.J@omega)
 
         return force, M
-    def ref_trajectory_agresive(self, mul):
+
+    def ref_trajectory_circle(self, mul, a, b):
         # Compute the desired Trajecotry of the system
         # INPUT 
         # t                                                - time
@@ -502,37 +509,100 @@ class DifferentialFlatnessNode(Node):
         r_min = (r_max)/self.n
         Q = mul
 
-        xd = 2 * np.sin(mul * 0.04* t)
-        yd = 2 * np.sin(mul * 0.08 * t)
-        zd = 1 * np.sin(0.1*Q*t) + 4
+        xd = 2 * np.sin(mul * a* t)
+        yd = 2 * np.cos(mul * b* t)
+        zd = 0 * np.sin(0.1*Q*t) + 4
 
         # Compute velocities
         # Compute velocities
-        xd_p = 2 * mul * 0.04 * np.cos(mul * 0.04 * t)
-        yd_p = 2 * mul * 0.08 * np.cos(mul * 0.08 * t)
-        zd_p = 0.1 * Q * np.cos(0.1*Q * t)
+        xd_p = 2 * mul * a * np.cos(mul * a * t)
+        yd_p = -2 * mul * b * np.sin(mul * b * t)
+        zd_p = 0.1 * Q * np.cos(0.1*Q * t)*0
 
         # Compute acceleration
-        xd_pp = -2 * mul * mul * 0.04 * 0.04 * np.sin(mul * 0.04 * t)
-        yd_pp = -2 * mul * mul * 0.08 * 0.08 * np.sin(mul * 0.08 * t);  
-        zd_pp = -0.1 * 0.1 * Q * Q *  np.sin(0.1*Q * t)
+        xd_pp = -2 * mul * mul * a * a * np.sin(mul * a * t)
+        yd_pp = -2 * mul * mul * b * b * np.cos(mul * b * t)
+        zd_pp = -0.1 * 0.1 * Q * Q *  np.sin(0.1*Q * t)*0
 
         # Compute jerk
-        xd_ppp = -2 * mul * mul * mul * 0.04 * 0.04 * 0.04 * np.cos(mul * 0.04 * t)
-        yd_ppp = -2 * mul * mul * mul * 0.08 * 0.08 * 0.08 * np.cos(mul * 0.08 * t);  
-        zd_ppp = -0.1 * 0.1 * 0.1* Q * Q * Q * np.cos(0.1*Q * t)
+        xd_ppp = -2 * mul * mul * mul * a * a * a * np.cos(mul * a * t)
+        yd_ppp =  2 * mul * mul * mul * b * b * b * np.sin(mul * b * t)
+        zd_ppp = -0.1 * 0.1 * 0.1* Q * Q * Q * np.cos(0.1*Q * t)*0
 
         # Compute snap
-        xd_pppp = 2 * mul * mul * mul * mul * 0.04 * 0.04 * 0.04 * 0.04 * np.sin(mul * 0.04 * t)
-        yd_pppp = 2 * mul * mul * mul * mul * 0.08 * 0.08 * 0.08 * 0.08 * np.sin(mul * 0.08 * t);  
-        zd_pppp = 0.1 * 0.1 * 0.1 * 0.1 * Q * Q * Q * Q * np.sin(0.1*Q * t)
+        xd_pppp = 2 * mul * mul * mul * mul * a * a * a * a * np.sin(mul * a * t)
+        yd_pppp = 2 * mul * mul * mul * mul * b * b * b * b * np.sin(mul * b * t)
+        zd_pppp = 0.1 * 0.1 * 0.1 * 0.1 * Q * Q * Q * Q * np.sin(0.1*Q * t)*0
 
         # Compute angular displacement
         theta = np.arctan2(yd_p, xd_p)
-        theta = theta
+        theta = 0*theta
+        theta = np.zeros((theta.shape[0]))
+        theta[:] = 0*np.pi/2
+        # Compute angular velocity
+        theta_p = 0*(1. / ((yd_p / xd_p) ** 2 + 1)) * ((yd_pp * xd_p - yd_p * xd_pp) / xd_p ** 2)
+        theta_p[0] = 0.0
+
+        theta_pp = np.zeros((theta.shape[0]))
+        theta_pp[0] = 0.0
+
+        # Compute the angular acceleration
+        for k in range(1, theta_p.shape[0]):
+            theta_pp[k] = (theta_p[k] - theta_p[k-1])/self.ts
+        hd = np.vstack((xd, yd, zd))
+        hd_p = np.vstack((xd_p, yd_p, zd_p))
+        hd_pp = np.vstack((xd_pp, yd_pp, zd_pp))
+        hd_ppp = np.vstack((xd_ppp, yd_ppp, zd_ppp))
+        hd_pppp = np.vstack((xd_pppp, yd_pppp, zd_pppp))
+
+        return hd, theta, hd_p, theta_p, hd_pp, hd_ppp, hd_pppp, theta_pp
+    def ref_trajectory_agresive(self, mul, a, b):
+        # Compute the desired Trajecotry of the system
+        # INPUT 
+        # t                                                - time
+        # OUTPUT
+        # xd, yd, zd                                       - desired position
+        # theta                                            - desired orientation
+        # theta_p                                          - desired angular velocity
+        t = self.t
+        r_max = (self.V_max**2)/self.a_max
+        k = self.a_max/self.V_max
+        r_min = (r_max)/self.n
+        Q = mul
+
+        xd = 2 * np.sin(mul * a* t)
+        yd = 2 * np.sin(mul * b* t)
+        zd = 0 * np.sin(0.1*Q*t) + 4
+
+        # Compute velocities
+        # Compute velocities
+        xd_p = 2 * mul * a * np.cos(mul * a * t)
+        yd_p = 2 * mul * b * np.cos(mul * b * t)
+        zd_p = 0.1 * Q * np.cos(0.1*Q * t)*0
+
+        # Compute acceleration
+        xd_pp = -2 * mul * mul * a * a * np.sin(mul * a * t)
+        yd_pp = -2 * mul * mul * b * b * np.sin(mul * b * t);  
+        zd_pp = -0.1 * 0.1 * Q * Q *  np.sin(0.1*Q * t)*0
+
+        # Compute jerk
+        xd_ppp = -2 * mul * mul * mul * a * a * a * np.cos(mul * a * t)
+        yd_ppp = -2 * mul * mul * mul * b * b * b * np.cos(mul * b * t);  
+        zd_ppp = -0.1 * 0.1 * 0.1* Q * Q * Q * np.cos(0.1*Q * t)*0
+
+        # Compute snap
+        xd_pppp = 2 * mul * mul * mul * mul * a * a * a * a * np.sin(mul * a * t)
+        yd_pppp = 2 * mul * mul * mul * mul * b * b * b * b * np.sin(mul * b * t);  
+        zd_pppp = 0.1 * 0.1 * 0.1 * 0.1 * Q * Q * Q * Q * np.sin(0.1*Q * t)*0
+
+        # Compute angular displacement
+        theta = np.arctan2(yd_p, xd_p)
+        theta = 0*theta
+        theta = np.zeros((theta.shape[0]))
+        theta[:] = 0*np.pi/2
 
         # Compute angular velocity
-        theta_p = (1. / ((yd_p / xd_p) ** 2 + 1)) * ((yd_pp * xd_p - yd_p * xd_pp) / xd_p ** 2)
+        theta_p = 0*(1. / ((yd_p / xd_p) ** 2 + 1)) * ((yd_pp * xd_p - yd_p * xd_pp) / xd_p ** 2)
         theta_p[0] = 0.0
 
         theta_pp = np.zeros((theta.shape[0]))
